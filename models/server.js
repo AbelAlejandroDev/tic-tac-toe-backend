@@ -20,17 +20,17 @@ class Server {
   }
 
   middlewares() {
-    // Directorio public
-    this.app.use(express.static(path.resolve(__dirname, "../public")));
+    // this.app.use(
+    //   cors({
+    //     origin: "*",
+    //     methods: ["GET", "POST"],
+    //     allowedHeaders: "*",
+    //     credentials: true,
+    //   })
+    // );
 
-    this.app.use(
-      cors({
-        origin: "*",
-        methods: ["GET", "POST"],
-        allowedHeaders: "*",
-        credentials: true,
-      })
-    );
+    // Parseamos el body
+    this.app.use(express.json());
   }
 
   configSockets() {
