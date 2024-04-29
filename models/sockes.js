@@ -3,6 +3,7 @@ const { generateToken } = require("../utils/jwt");
 class Sockets {
   constructor(io) {
     this.io = io;
+    this.game = new Map();
     this.socketEvents();
   }
 
@@ -90,10 +91,13 @@ class Sockets {
 
       socket.on("respuesta-revancha", ({ playerId, token, accepted }) => {
         const game = this.game.get(token);
-        const reciverID = game.players.find((player) => player !== playerId);
-
+        if (!game || !game.players.includes(playerId)) {
+          console.log("Error: Jugador o juego no encontrado");
+          return;
+        }
         // Emitimos si la petición fue rechazada
-        this.io.to(reciverID).emit("respuesta-revancha", accepted);
+        const opponentId = game.players.find((player) => player !== playerId);
+        this.io.to(opponentId).emit("respuesta-revancha", accepted);
 
         if (accepted) {
           // Si la revancha es aceptada, reiniciar el juego
@@ -107,11 +111,26 @@ class Sockets {
           }, 1500);
         } else {
           this.io.to(token).emit("abandono-partida");
+          // eliminamos la sala
+          this.game.delete(token);
+          console.log(`La sala ${token} ha sido eliminada`);
         }
       });
 
-        console.log(`Hay ${numPlayers} jugadores en la sala ${code}`);
-      });
+      // socket.on("abandonar-partida", (code) => {
+      //   const game = this.game.get(code);
+      //   const index = game.players.indexOf(socket.id);
+      //   if (index !== -1) {
+      //     game.players.splice(index, 1);
+      //     if (game.players.length === 0) {
+      //       // Si ya no hay jugadores, eliminamos la partida
+      //       this.game.delete(code);
+      //     } else {
+      //       // Notificamos al otro jugador que el oponente ha abandonado la partida
+      //       this.io.to(code).emit("oponente-abandonado");
+      //     }
+      //   }
+      // });
 
       socket.on("disconnect", () => {
         this.io.emit(console.log("player desconnected"));
