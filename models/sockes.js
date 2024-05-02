@@ -1,4 +1,5 @@
 const { generateToken } = require("../utils/jwt");
+const { makeMove } = require("../utils/openai-test");
 
 class Sockets {
   constructor(io) {
@@ -12,29 +13,77 @@ class Sockets {
     this.io.on("connection", (socket) => {
       console.log("player connected");
 
+      // Multiplayer
+      //Generamos un token
+      socket.on("generar-token", async () => {
+        // Generamos el token
+        const token = await generateToken();
+        // Emitimos el token
+        socket.emit("token-generado", token);
+      });
+
       // Crear una sala
-      socket.on("crear-partida", async (id) => {
+      socket.on("crear-partida", async ({ id, gameType, token }) => {
         try {
-          // Generamos el token
-          const token = await generateToken();
-          this.game.set(token, {
-            players: [id],
-            currentPlayer: id,
-            squares: Array(9).fill(null),
-          });
-          // Emitimos el token
-          socket.emit("token-generado", token);
+          if (gameType === "free-room") {
+            // Generamos el identificador de la partida
+            const token = await generateToken();
+            this.game.set(token, {
+              players: [id],
+              currentPlayer: id,
+              squares: Array(9).fill(null),
+              gameType,
+            });
+            //Unimos al jugador que creo la partida a la sala
+            socket.join(token);
+            // Contar el número de sockets en la sala ||DEV
+            const roomInfo = this.io.sockets.adapter.rooms.get(token);
+            const numPlayers = roomInfo ? roomInfo.size : 0;
 
-          //Unimos al jugador que creo la partida a la sala
-          socket.join(token);
+            console.log(`Hay ${numPlayers} jugadores en la sala ${token}`);
+          } else {
+            this.game.set(token, {
+              players: [id],
+              currentPlayer: id,
+              squares: Array(9).fill(null),
+              gameType,
+            });
+            //Unimos al jugador que creo la partida a la sala
+            socket.join(token);
+            // Contar el número de sockets en la sala ||DEV
+            const roomInfo = this.io.sockets.adapter.rooms.get(token);
+            const numPlayers = roomInfo ? roomInfo.size : 0;
 
-          // Contar el número de sockets en la sala ||DEV
-          const roomInfo = this.io.sockets.adapter.rooms.get(token);
-          const numPlayers = roomInfo ? roomInfo.size : 0;
-
-          console.log(`Hay ${numPlayers} jugadores en la sala ${token}`);
+            console.log(`Hay ${numPlayers} jugadores en la sala ${token}`);
+          }
         } catch (err) {
           console.log("Error al generar el token:", err);
+        }
+      });
+
+      // Buscar partida
+      socket.on("encontrar-partida", ({ id }) => {
+        // buscamos si hay alguna partida disponible y optenemos el token
+        const gameAvailableEntry = Array.from(this.game.entries()).find(
+          ([_, game]) =>
+            game.players.length === 1 && game.gameType !== "with-code"
+        );
+        if (gameAvailableEntry) {
+          const [token, gameAvailable] = gameAvailableEntry;
+          // Validamos que el jugador no pueda unirse a su misma sala
+          if (gameAvailable.players[0] === id) return;
+          console.log(gameAvailable);
+          // Unimos al jugador
+          socket.join(token);
+          gameAvailable.players.push(id);
+          const players = gameAvailable.players;
+          this.io.to(token).emit("jugador-unido", { players, token });
+          // console.log(gameAvailable.players);
+          const roomInfo = this.io.sockets.adapter.rooms.get(token);
+          const numPlayers = roomInfo ? roomInfo.size : 0;
+          console.log(`Hay ${numPlayers} jugadores en la sala ${token}`);
+        } else {
+          console.log("No hay partidas disponibles en este momento.");
         }
       });
 
@@ -49,7 +98,8 @@ class Sockets {
         // Validar max players
         if (game.players.length >= 2)
           return console.log("Numero maximo de jugadores");
-
+        if (game.players[0] === id)
+          return console.log("NO puedes unirte a tu misma sala");
         socket.join(codeRoom);
         game.players.push(id);
         const players = game.players;
@@ -62,6 +112,7 @@ class Sockets {
 
       // Movimiento del jugador
       socket.on("jugada", (data) => {
+        console.log(data)
         const { code, squares, currentPlayer } = data;
         const game = this.game.get(code);
 
@@ -72,7 +123,7 @@ class Sockets {
         const currentPlayerIndex = game.players.indexOf(currentPlayer);
         const nextPlayerIndex = (currentPlayerIndex + 1) % game.players.length;
         game.currentPlayer = game.players[nextPlayerIndex];
-
+        console.log(game.currentPlayer);
         this.io.to(code).emit("jugada", {
           squares: squares,
           currentPlayer: game.currentPlayer,
